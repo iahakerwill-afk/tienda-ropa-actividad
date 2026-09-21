@@ -9,6 +9,9 @@
       "firebase.json",
       "firestore.rules",
       "firestore.indexes.json",
+      ".git/**",
+      ".firebase/**",
+      ".firebaserc",
       "**/.*",
       "node_modules/**",
       "README.md"
