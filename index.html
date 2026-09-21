@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nuvora — Tienda de Ropa Online</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <header class="topbar">
+    <div class="logo">nuvora<span>.</span></div>
+    <nav class="categorias" id="categorias">
+      <button class="activa" data-cat="todas">Todas</button>
+    </nav>
+  </header>
+
+  <section class="hero">
+    <h1>Nueva colección</h1>
+    <p>Actividad de clase: Media Técnica en Mantenimiento de Bases de Datos — I.E. Fundadores</p>
+  </section>
+
+  <main class="catalogo">
+    <div id="grid" class="grid-productos">
+      <div class="cargando">Cargando productos…</div>
+    </div>
+  </main>
+
+  <footer class="pie">
+    Proyecto educativo · Tienda conectada a Firebase Firestore ·
+    <a href="admin.html">Acceso administrador</a>
+  </footer>
+
+  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
+  <script src="firebase-config.js"></script>
+  <script>
+    const grid = document.getElementById('grid');
+    const nav = document.getElementById('categorias');
+    let productos = [];
+    let categoriaActiva = 'todas';
+
+    function formatoPrecio(valor) {
+      return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(valor);
+    }
+
+    function pintarCategorias() {
+      const categorias = ['todas', ...new Set(productos.map(p => p.categoria).filter(Boolean))];
+      nav.innerHTML = categorias.map(c =>
+        `<button data-cat="${c}" class="${c === categoriaActiva ? 'activa' : ''}">${c === 'todas' ? 'Todas' : c}</button>`
+      ).join('');
+      nav.querySelectorAll('button').forEach(btn => {
+        btn.addEventListener('click', () => {
+          categoriaActiva = btn.dataset.cat;
+          pintarCategorias();
+          pintarProductos();
+        });
+      });
+    }
+
+    function pintarProductos() {
+      const lista = categoriaActiva === 'todas'
+        ? productos
+        : productos.filter(p => p.categoria === categoriaActiva);
+
+      if (lista.length === 0) {
+        grid.innerHTML = '<div class="vacio">Todavía no hay productos en esta categoría. Ve al panel de administrador para agregar el primero.</div>';
+        return;
+      }
+
+      grid.innerHTML = lista.map(p => `
+        <article class="tarjeta-producto">
+          <div class="img-wrap">
+            ${p.imagen ? `<img src="${p.imagen}" alt="${p.nombre}">` : ''}
+          </div>
+          <div class="info">
+            <span class="categoria">${p.categoria || ''}</span>
+            <h3>${p.nombre}</h3>
+            <span class="tallas">Tallas: ${p.tallas || '-'}</span>
+            <span class="precio">${formatoPrecio(p.precio || 0)}</span>
+            <button onclick="pedirPorWhatsapp('${p.nombre.replace(/'/g, "")}', ${p.precio || 0})">Consultar / Pedir</button>
+          </div>
+        </article>
+      `).join('');
+    }
+
+    function pedirPorWhatsapp(nombre, precio) {
+      const mensaje = encodeURIComponent(`Hola, quiero información sobre: ${nombre} (${formatoPrecio(precio)})`);
+      window.open(`https://wa.me/?text=${mensaje}`, '_blank');
+    }
+
+    db.collection('productos').orderBy('creado', 'desc').onSnapshot(snap => {
+      productos = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      pintarCategorias();
+      pintarProductos();
+    }, err => {
+      grid.innerHTML = `<div class="vacio">Error cargando productos: ${err.message}</div>`;
+    });
+  </script>
+</body>
+</html>

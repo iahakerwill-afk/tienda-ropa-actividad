@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nuvora — Panel Administrador</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- Pantalla de acceso -->
+  <div id="pantallaLogin" class="admin-shell">
+    <h1>Panel de administrador</h1>
+    <p style="color:#6b6b6b; font-size:13px;">Inicia sesión con la cuenta de administrador creada en Firebase Authentication.</p>
+    <input type="email" id="loginEmail" placeholder="Correo">
+    <input type="password" id="loginPass" placeholder="Contraseña">
+    <button id="btnLogin">Entrar</button>
+    <div class="error-msg" id="loginError"></div>
+  </div>
+
+  <!-- Panel principal (oculto hasta iniciar sesión) -->
+  <div id="pantallaPanel" class="panel-admin" style="display:none;">
+    <div class="cabecera-admin">
+      <div>
+        <h1 style="margin:0;">Administrar productos</h1>
+        <small id="correoActivo" style="color:#6b6b6b;"></small>
+      </div>
+      <div>
+        <a href="index.html" style="margin-right:10px;">Ver tienda</a>
+        <button id="btnLogout">Cerrar sesión</button>
+      </div>
+    </div>
+
+    <div class="layout-admin">
+      <form class="form-producto" id="formProducto">
+        <h2 id="tituloForm">Agregar producto</h2>
+        <input type="hidden" id="productoId">
+
+        <div class="preview-imagen" id="previewImagen">Vista previa de la imagen</div>
+        <input type="file" id="inputImagen" accept="image/*">
+
+        <input type="text" id="nombre" placeholder="Nombre del producto" required>
+        <input type="number" id="precio" placeholder="Precio (COP)" required>
+        <input type="text" id="categoria" placeholder="Categoría (ej. Camisetas, Pantalones)" required>
+        <input type="text" id="tallas" placeholder="Tallas disponibles (ej. S, M, L)">
+        <textarea id="descripcion" rows="3" placeholder="Descripción corta"></textarea>
+
+        <button type="submit" id="btnGuardar">Guardar producto</button>
+        <button type="button" id="btnCancelarEdicion" style="background:#6b6b6b; margin-top:8px; display:none;">Cancelar edición</button>
+        <div class="error-msg" id="formError"></div>
+      </form>
+
+      <div>
+        <table class="tabla-productos">
+          <thead>
+            <tr><th>Imagen</th><th>Nombre</th><th>Categoría</th><th>Precio</th><th>Tallas</th><th></th></tr>
+          </thead>
+          <tbody id="cuerpoTabla">
+            <tr><td colspan="6">Cargando productos…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
+  <script src="firebase-config.js"></script>
+  <script>
+    const pantallaLogin = document.getElementById('pantallaLogin');
+    const pantallaPanel = document.getElementById('pantallaPanel');
+
+    // ---- Autenticación ----
+    document.getElementById('btnLogin').addEventListener('click', () => {
+      const email = document.getElementById('loginEmail').value.trim();
+      const pass = document.getElementById('loginPass').value;
+      document.getElementById('loginError').textContent = '';
+      auth.signInWithEmailAndPassword(email, pass)
+        .catch(err => { document.getElementById('loginError').textContent = 'No se pudo iniciar sesión: ' + err.message; });
+    });
+
+    document.getElementById('btnLogout').addEventListener('click', () => auth.signOut());
+
+    auth.onAuthStateChanged(user => {
+      if (user) {
+        pantallaLogin.style.display = 'none';
+        pantallaPanel.style.display = 'block';
+        document.getElementById('correoActivo').textContent = user.email;
+        cargarProductos();
+      } else {
+        pantallaLogin.style.display = 'block';
+        pantallaPanel.style.display = 'none';
+      }
+    });
+
+    // ---- Imagen a base64 ----
+    let imagenBase64 = '';
+    document.getElementById('inputImagen').addEventListener('change', (e) => {
+      const archivo = e.target.files[0];
+      if (!archivo) return;
+      if (archivo.size > 900 * 1024) {
+        document.getElementById('formError').textContent = 'La imagen es muy pesada (máx ~900 KB). Usa una más liviana.';
+        e.target.value = '';
+        return;
+      }
+      const lector = new FileReader();
+      lector.onload = () => {
+        imagenBase64 = lector.result;
+        document.getElementById('previewImagen').innerHTML = `<img src="${imagenBase64}">`;
+      };
+      lector.readAsDataURL(archivo);
+    });
+
+    // ---- Guardar (crear o editar) producto ----
+    const formProducto = document.getElementById('formProducto');
+    formProducto.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      document.getElementById('formError').textContent = '';
+
+      const id = document.getElementById('productoId').value;
+      const datos = {
+        nombre: document.getElementById('nombre').value.trim(),
+        precio: Number(document.getElementById('precio').value),
+        categoria: document.getElementById('categoria').value.trim(),
+        tallas: document.getElementById('tallas').value.trim(),
+        descripcion: document.getElementById('descripcion').value.trim(),
+      };
+      if (imagenBase64) datos.imagen = imagenBase64;
+
+      try {
+        if (id) {
+          await db.collection('productos').doc(id).update(datos);
+        } else {
+          if (!imagenBase64) {
+            document.getElementById('formError').textContent = 'Selecciona una imagen para el producto.';
+            return;
+          }
+          datos.creado = firebase.firestore.FieldValue.serverTimestamp();
+          await db.collection('productos').add(datos);
+        }
+        resetFormulario();
+      } catch (err) {
+        document.getElementById('formError').textContent = 'Error al guardar: ' + err.message;
+      }
+    });
+
+    function resetFormulario() {
+      formProducto.reset();
+      document.getElementById('productoId').value = '';
+      document.getElementById('tituloForm').textContent = 'Agregar producto';
+      document.getElementById('btnGuardar').textContent = 'Guardar producto';
+      document.getElementById('btnCancelarEdicion').style.display = 'none';
+      document.getElementById('previewImagen').innerHTML = 'Vista previa de la imagen';
+      imagenBase64 = '';
+    }
+
+    document.getElementById('btnCancelarEdicion').addEventListener('click', resetFormulario);
+
+    // ---- Listado / editar / eliminar ----
+    function cargarProductos() {
+      db.collection('productos').orderBy('creado', 'desc').onSnapshot(snap => {
+        const cuerpo = document.getElementById('cuerpoTabla');
+        if (snap.empty) {
+          cuerpo.innerHTML = '<tr><td colspan="6">Aún no hay productos.</td></tr>';
+          return;
+        }
+        cuerpo.innerHTML = snap.docs.map(doc => {
+          const p = doc.data();
+          return `
+            <tr>
+              <td>${p.imagen ? `<img src="${p.imagen}">` : ''}</td>
+              <td>${p.nombre}</td>
+              <td>${p.categoria || ''}</td>
+              <td>${new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(p.precio || 0)}</td>
+              <td>${p.tallas || ''}</td>
+              <td>
+                <button class="editar" onclick='editarProducto("${doc.id}")'>Editar</button>
+                <button class="eliminar" onclick='eliminarProducto("${doc.id}")'>Eliminar</button>
+              </td>
+            </tr>`;
+        }).join('');
+      });
+    }
+
+    window.editarProducto = async (id) => {
+      const doc = await db.collection('productos').doc(id).get();
+      const p = doc.data();
+      document.getElementById('productoId').value = id;
+      document.getElementById('nombre').value = p.nombre || '';
+      document.getElementById('precio').value = p.precio || '';
+      document.getElementById('categoria').value = p.categoria || '';
+      document.getElementById('tallas').value = p.tallas || '';
+      document.getElementById('descripcion').value = p.descripcion || '';
+      if (p.imagen) {
+        imagenBase64 = p.imagen;
+        document.getElementById('previewImagen').innerHTML = `<img src="${p.imagen}">`;
+      }
+      document.getElementById('tituloForm').textContent = 'Editar producto';
+      document.getElementById('btnGuardar').textContent = 'Guardar cambios';
+      document.getElementById('btnCancelarEdicion').style.display = 'block';
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
+    window.eliminarProducto = async (id) => {
+      if (!confirm('¿Eliminar este producto? Esta acción no se puede deshacer.')) return;
+      await db.collection('productos').doc(id).delete();
+    };
+  </script>
+</body>
+</html>
